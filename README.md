@@ -174,5 +174,6 @@ Your question may also help others to better understand this project. 🔥
 The project is designed for educational purpose for the course _CS307 Principles of Database Systems at Southern University of Science and Technology.
 
 The code template is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
-#   P o s t g r e S Q L _ P r o j e c t 2  
+#   P o s t g r e S Q L _ P r o j e c t 2 
+ 
  
