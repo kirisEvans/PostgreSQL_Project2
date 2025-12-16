@@ -43,8 +43,7 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     @Override
     public List<Integer> getGroupMembers() {
-        //TODO: replace this with your own student IDs in your group
-        return Arrays.asList(12210000, 12210001, 12210002);
+        return Arrays.asList(12210824, 12210823);
     }
 
     @Autowired
@@ -61,6 +60,12 @@ public class DatabaseServiceImpl implements DatabaseService {
         createTables();
 
         // TODO: implement your import logic
+        insertUsers(userRecords);
+
+        insertRecipes(recipeRecords);
+
+        insertReviews(reviewRecords);
+
 
     }
 
@@ -152,6 +157,148 @@ public class DatabaseServiceImpl implements DatabaseService {
         }
     }
 
+    private void insertUsers(List<UserRecord> users) {
+        String sql = """
+        INSERT INTO users
+        (AuthorId, AuthorName, Gender, Age, Followers, Following, Password, IsDeleted)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (AuthorId) DO NOTHING
+        """;
+
+        int batchSize = 1000;
+
+        for (int i = 0; i < users.size(); i += batchSize) {
+            List<UserRecord> sub =
+                    users.subList(i, Math.min(i + batchSize, users.size()));
+
+            jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
+                @Override
+                public void setValues(PreparedStatement ps, int i) throws SQLException {
+                    UserRecord u = sub.get(i);
+                    ps.setLong(1, u.getAuthorId());
+                    ps.setString(2, u.getAuthorName());
+                    ps.setString(3, u.getGender());
+                    ps.setInt(4, u.getAge());
+                    ps.setInt(5, u.getFollowers());
+                    ps.setInt(6, u.getFollowing());
+                    ps.setString(7, u.getPassword());
+                    ps.setBoolean(8, u.isDeleted());
+                }
+
+                @Override
+                public int getBatchSize() {
+                    return sub.size();
+                }
+            });
+        }
+    }
+
+    private void insertRecipes(List<RecipeRecord> recipes) {
+        String sql = """
+        INSERT INTO recipes
+        (RecipeId, Name, AuthorId, CookTime, PrepTime, TotalTime,
+         DatePublished, Description, RecipeCategory,
+         AggregatedRating, ReviewCount,
+         Calories, FatContent, SaturatedFatContent,
+         CholesterolContent, SodiumContent,
+         CarbohydrateContent, FiberContent, SugarContent,
+         ProteinContent, RecipeServings, RecipeYield)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (RecipeId) DO NOTHING
+        """;
+
+        int batchSize = 1000;
+
+        for (int i = 0; i < recipes.size(); i += batchSize) {
+            List<RecipeRecord> sub =
+                    recipes.subList(i, Math.min(i + batchSize, recipes.size()));
+
+            jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
+                @Override
+                public void setValues(PreparedStatement ps, int i) throws SQLException {
+                    RecipeRecord r = sub.get(i);
+                    ps.setLong(1, r.getRecipeId());
+                    ps.setString(2, r.getName());
+                    ps.setLong(3, r.getAuthorId());
+                    ps.setString(4, r.getCookTime());
+                    ps.setString(5, r.getPrepTime());
+                    ps.setString(6, r.getTotalTime());
+                    ps.setTimestamp(7, r.getDatePublished());
+                    ps.setString(8, r.getDescription());
+                    ps.setString(9, r.getRecipeCategory());
+                    ps.setFloat(10, r.getAggregatedRating());
+                    ps.setInt(11, r.getReviewCount());
+                    ps.setFloat(12, r.getCalories());
+                    ps.setFloat(13, r.getFatContent());
+                    ps.setFloat(14, r.getSaturatedFatContent());
+                    ps.setFloat(15, r.getCholesterolContent());
+                    ps.setFloat(16, r.getSodiumContent());
+                    ps.setFloat(17, r.getCarbohydrateContent());
+                    ps.setFloat(18, r.getFiberContent());
+                    ps.setFloat(19, r.getSugarContent());
+                    ps.setFloat(20, r.getProteinContent());
+                    ps.setInt(21, r.getRecipeServings());
+                    ps.setString(22, r.getRecipeYield());
+                }
+
+                @Override
+                public int getBatchSize() {
+                    return sub.size();
+                }
+            });
+        }
+    }
+
+    private void insertReviews(List<ReviewRecord> reviews) {
+        String sql = """
+        INSERT INTO reviews
+        (ReviewId, RecipeId, AuthorId, Rating, Review, DateSubmitted, DateModified)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (ReviewId) DO NOTHING
+        """;
+
+        int batchSize = 1000;
+
+        for (int i = 0; i < reviews.size(); i += batchSize) {
+            List<ReviewRecord> sub =
+                    reviews.subList(i, Math.min(i + batchSize, reviews.size()));
+
+            jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
+                @Override
+                public void setValues(PreparedStatement ps, int i) throws SQLException {
+                    ReviewRecord r = sub.get(i);
+                    ps.setLong(1, r.getReviewId());
+                    ps.setLong(2, r.getRecipeId());
+                    ps.setLong(3, r.getAuthorId());
+                    ps.setFloat(4, r.getRating());
+                    ps.setString(5, r.getReview());
+                    ps.setTimestamp(6, r.getDateSubmitted());
+                    ps.setTimestamp(7, r.getDateModified());
+                }
+
+                @Override
+                public int getBatchSize() {
+                    return sub.size();
+                }
+            });
+        }
+    }
+
+    private void insertRecipeIngredients(List<RecipeRecord> recipes) {
+        String sql = "INSERT INTO recipe_ingredients (RecipeId, IngredientPart) VALUES (?, ?) ON CONFLICT DO NOTHING";
+
+        jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
+            @Override
+            public void setValues(PreparedStatement ps, int i) throws SQLException {
+                RecipeRecord r = recipes.get(i);
+                ps.setLong(1, r.getRecipeId());
+                ps.setString(2, r.ingredientPart());
+            }
+
+            @Override
+            public int getBatchSize() { return recipes.size(); }
+        });
+    }
 
 
     /*
