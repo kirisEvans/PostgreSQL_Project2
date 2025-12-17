@@ -22,18 +22,24 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class RecipeServiceImpl implements RecipeService {
-
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Override
     public String getNameFromID(long id) {
-        return null;
+        String sql = "select Name from recipes where RecipeId = ?";
+        try {
+            return jdbcTemplate.queryForObject(sql, String.class, id);
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
     }
 
     @Override
     public RecipeRecord getRecipeById(long recipeId) {
+        String sql = "select * from recipes where RecipeId = ?";
         return null;
     }
-
 
     @Override
     public PageResult<RecipeRecord> searchRecipes(String keyword, String category, Double minRating,
