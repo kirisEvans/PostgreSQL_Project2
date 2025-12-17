@@ -59,14 +59,17 @@ public class DatabaseServiceImpl implements DatabaseService {
         // ddl to create tables.
         createTables();
 
-        // TODO: implement your import logic
         insertUsers(userRecords);
 
         insertRecipes(recipeRecords);
 
         insertReviews(reviewRecords);
 
+        insertRecipeIngredients(recipeRecords);
 
+        insertReviewLikes(reviewRecords);
+
+        insertUserFollows(userRecords);
     }
 
 
@@ -173,8 +176,8 @@ public class DatabaseServiceImpl implements DatabaseService {
 
             jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
                 @Override
-                public void setValues(PreparedStatement ps, int i) throws SQLException {
-                    UserRecord u = sub.get(i);
+                public void setValues(PreparedStatement ps, int idx) throws SQLException {
+                    UserRecord u = sub.get(idx);
                     ps.setLong(1, u.getAuthorId());
                     ps.setString(2, u.getAuthorName());
                     ps.setString(3, u.getGender());
@@ -215,8 +218,8 @@ public class DatabaseServiceImpl implements DatabaseService {
 
             jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
                 @Override
-                public void setValues(PreparedStatement ps, int i) throws SQLException {
-                    RecipeRecord r = sub.get(i);
+                public void setValues(PreparedStatement ps, int idx) throws SQLException {
+                    RecipeRecord r = sub.get(idx);
                     ps.setLong(1, r.getRecipeId());
                     ps.setString(2, r.getName());
                     ps.setLong(3, r.getAuthorId());
@@ -265,8 +268,8 @@ public class DatabaseServiceImpl implements DatabaseService {
 
             jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
                 @Override
-                public void setValues(PreparedStatement ps, int i) throws SQLException {
-                    ReviewRecord r = sub.get(i);
+                public void setValues(PreparedStatement ps, int idx) throws SQLException {
+                    ReviewRecord r = sub.get(idx);
                     ps.setLong(1, r.getReviewId());
                     ps.setLong(2, r.getRecipeId());
                     ps.setLong(3, r.getAuthorId());
@@ -287,17 +290,94 @@ public class DatabaseServiceImpl implements DatabaseService {
     private void insertRecipeIngredients(List<RecipeRecord> recipes) {
         String sql = "INSERT INTO recipe_ingredients (RecipeId, IngredientPart) VALUES (?, ?) ON CONFLICT DO NOTHING";
 
-        jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
-            @Override
-            public void setValues(PreparedStatement ps, int i) throws SQLException {
-                RecipeRecord r = recipes.get(i);
-                ps.setLong(1, r.getRecipeId());
-                ps.setString(2, r.ingredientPart());
+        List<Pair<Long, String>> pairs = new ArrayList<>();
+        for (RecipeRecord r : recipes) {
+            for (String part : r.getRecipeIngredientParts()) {
+                pairs.add(new Pair<>(r.getRecipeId(), part));
             }
+        }
 
-            @Override
-            public int getBatchSize() { return recipes.size(); }
-        });
+        int batchSize = 1000;
+
+        for (int i = 0; i < pairs.size(); i += batchSize) {
+            List<Pair<Long, String>> sub = pairs.subList(i, Math.min(i + batchSize, pairs.size()));
+
+            jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
+                @Override
+                public void setValues(PreparedStatement ps, int idx) throws SQLException {
+                    Pair<Long, String> p = sub.get(idx);
+                    ps.setLong(1, p.getKey());
+                    ps.setString(2, p.getValue());
+                }
+
+                @Override
+                public int getBatchSize() {
+                    return sub.size();
+                }
+            });
+        }
+    }
+
+    private void insertReviewLikes(List<ReviewRecord> reviews) {
+        String sql = "INSERT INTO review_likes (ReviewId, AuthorId) VALUES (?, ?) ON CONFLICT DO NOTHING";
+
+        List<Pair<Long, Long>> pairs = new ArrayList<>();
+        for (ReviewRecord r: reviews) {
+            for (long like: r.getLikes()) {
+                pairs.add(new Pair<>(r.getReviewId(), like));
+            }
+        }
+
+        int batchSize = 1000;
+
+        for (int i = 0; i < pairs.size(); i += batchSize) {
+            List<Pair<Long, Long>> sub = pairs.subList(i, Math.min(i + batchSize, pairs.size()));
+
+            jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
+                @Override
+                public void setValues(PreparedStatement ps, int idx) throws SQLException {
+                    Pair<Long, Long> p = sub.get(idx);
+                    ps.setLong(1, p.getKey());
+                    ps.setLong(2, p.getValue());
+                }
+
+                @Override
+                public int getBatchSize() {
+                    return sub.size();
+                }
+            });
+        }
+    }
+
+    private void insertUserFollows(List<UserRecord> users) {
+        String sql = "INSERT INTO user_follows(FollowerId, FollowingId) VALUES (?, ?) ON CONFLICT DO NOTHING";
+
+        List<Pair<Long, Long>> pairs = new ArrayList<>();
+        for (UserRecord u: users) {
+            for (long following: u.getFollowingUsers()) {
+                pairs.add(new Pair<>(u.getAuthorId(), following));
+            }
+        }
+
+        int batchSize = 1000;
+
+        for (int i = 0; i < pairs.size(); i += batchSize) {
+            List<Pair<Long, Long>> sub = pairs.subList(i, Math.min(i + batchSize, pairs.size()));
+
+            jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
+                @Override
+                public void setValues(PreparedStatement ps, int idx) throws SQLException {
+                    Pair<Long, Long> p = sub.get(idx);
+                    ps.setLong(1, p.getKey());
+                    ps.setLong(2, p.getValue());
+                }
+
+                @Override
+                public int getBatchSize() {
+                    return sub.size();
+                }
+            });
+        }
     }
 
 
@@ -351,5 +431,13 @@ public class DatabaseServiceImpl implements DatabaseService {
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public static class Pair<K, V> {
+        private final K key;
+        private final V value;
+        public Pair(K key, V value) { this.key = key; this.value = value; }
+        public K getKey() { return key; }
+        public V getValue() { return value; }
     }
 }
