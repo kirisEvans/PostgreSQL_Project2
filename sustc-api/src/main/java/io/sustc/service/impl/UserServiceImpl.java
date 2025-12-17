@@ -33,6 +33,19 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public long register(RegisterUserReq req) {
+
+
+//        String sql = "INSERT INTO users " +
+//                "(AuthorId, AuthorName, Gender, Age, Followers, Following, Password, IsDeleted) " +
+//                "VALUES (?, ?, ?, ?, 0, 0, ?, false)";
+//
+//        jdbcTemplate.update(sql,
+//                userId,
+//                req.getName(),
+//                req.getGender(),
+//                age,
+//                req.getPassword()
+//        );
       return 0;
     }
 
