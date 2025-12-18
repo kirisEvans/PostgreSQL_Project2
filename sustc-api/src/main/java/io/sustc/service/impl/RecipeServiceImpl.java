@@ -37,18 +37,185 @@ public class RecipeServiceImpl implements RecipeService {
 
     @Override
     public RecipeRecord getRecipeById(long recipeId) {
-        String sql = "select * from recipes where RecipeId = ?";
-        return null;
+        if (recipeId <= 0) throw new IllegalArgumentException("recipeId must be positive");
+        String sql1 = """
+                SELECT
+                    r.RecipeId,
+                    r.Name,
+                    r.AuthorId,
+                    u.AuthorName,
+                    r.CookTime,
+                    r.PrepTime,
+                    r.TotalTime,
+                    r.DatePublished,
+                    r.Description,
+                    r.RecipeCategory,
+                    r.AggregatedRating,
+                    r.ReviewCount,
+                    r.Calories,
+                    r.FatContent,
+                    r.SaturatedFatContent,
+                    r.CholesterolContent,
+                    r.SodiumContent,
+                    r.CarbohydrateContent,
+                    r.FiberContent,
+                    r.SugarContent,
+                    r.ProteinContent,
+                    r.RecipeServings,
+                    r.RecipeYield
+                FROM recipes r
+                LEFT JOIN users u ON r.AuthorId = u.AuthorId
+            WHERE r.RecipeId = ?;
+            """;
+
+        RecipeRecord recipe;
+        try {
+            recipe = jdbcTemplate.queryForObject(
+                    sql1,
+                    new BeanPropertyRowMapper<>(RecipeRecord.class),
+                    recipeId
+            );
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
+
+        String sql2 = "SELECT IngredientPart FROM recipe_ingredients WHERE RecipeId = ? order by IngredientPart";
+        List<String> ingredientParts = jdbcTemplate.query(
+                sql2,
+                (rs, rowNum) -> rs.getString("IngredientPart"),
+                recipeId
+        );
+
+        recipe.setRecipeIngredientParts(ingredientParts.toArray(new String[0]));
+
+        return recipe;
     }
+
 
     @Override
     public PageResult<RecipeRecord> searchRecipes(String keyword, String category, Double minRating,
                                                   Integer page, Integer size, String sort) {
-        return null;
+        if (page < 1 || size <= 0) throw new IllegalArgumentException("page must be bigger than 1 or size must be positive");
+
+        String keywordPattern = "%" + keyword + "%";
+        String orderBy = switch (sort) {
+            case "date_desc" -> "r.DatePublished DESC";
+            case "rating_desc" -> "r.AggregatedRating DESC, r.RecipeId desc";
+            case "calories_asc" -> "r.Calories ASC, r.RecipeId desc";
+            default -> throw new IllegalArgumentException("Unknown sort: " + sort);
+        };
+        PageResult<RecipeRecord> recipeRecords = new PageResult<>();
+        int offset = (page - 1) * size;
+        List<Object> params = new ArrayList<>();
+        List<Object> countParams = new ArrayList<>();
+
+        StringBuilder sql1 = new StringBuilder("""
+            SELECT r.RecipeId, r.Name, r.AuthorId, u.AuthorName, r.CookTime, r.PrepTime, r.TotalTime,
+                   r.DatePublished, r.Description, r.RecipeCategory, r.AggregatedRating, r.ReviewCount,
+                   r.Calories, r.FatContent, r.SaturatedFatContent, r.CholesterolContent, r.SodiumContent,
+                   r.CarbohydrateContent, r.FiberContent, r.SugarContent, r.ProteinContent, r.RecipeServings, r.RecipeYield
+            FROM recipes r
+            LEFT JOIN users u ON r.AuthorId = u.AuthorId
+            WHERE 1=1
+        """);
+
+        if (keyword != null) {
+            sql1.append(" AND (r.name ilike ? OR r.description ilike ?)");
+            params.add(keywordPattern);
+            params.add(keywordPattern);
+        }
+
+        if (category != null) {
+            sql1.append(" AND r.RecipeCategory = ?");
+            params.add(category);
+        }
+
+        if (minRating != null) {
+            sql1.append(" AND r.AggregatedRating >= ?");
+            params.add(minRating);
+        }
+
+        sql1.append(" ORDER BY ").append(orderBy);
+        sql1.append(" LIMIT ? OFFSET ?");
+        params.add(size);
+        params.add(offset);
+
+        try {
+            List<RecipeRecord> recipeList = jdbcTemplate.query(
+                    sql1.toString(),
+                    new BeanPropertyRowMapper<>(RecipeRecord.class),
+                    params.toArray()
+            );
+            recipeRecords.setItems(recipeList);
+        } catch (EmptyResultDataAccessException e) {
+            recipeRecords.setItems(null);
+        }
+
+        String sql2 = "SELECT IngredientPart FROM recipe_ingredients WHERE RecipeId = ?";
+        if (recipeRecords.getItems() != null && !recipeRecords.getItems().isEmpty()) {
+            for (RecipeRecord record : recipeRecords.getItems()) {
+                long recipeId = record.getRecipeId();
+                List<String> ingredientParts = jdbcTemplate.query(
+                        sql2,
+                        (rs, rowNum) -> rs.getString("IngredientPart"),
+                        recipeId
+                );
+                ingredientParts.sort(String.CASE_INSENSITIVE_ORDER);
+                record.setRecipeIngredientParts(ingredientParts.toArray(new String[0]));
+            }
+        }
+
+        recipeRecords.setPage(page);
+        recipeRecords.setSize(size);
+
+        StringBuilder countSql = new StringBuilder(
+                "SELECT count(*) FROM recipes r WHERE 1=1"
+        );
+
+        if (keyword != null) {
+            countSql.append(" AND (r.name ilike ? OR r.description ilike ?)");
+            countParams.add(keywordPattern);
+            countParams.add(keywordPattern);
+        }
+
+        if (category != null) {
+            countSql.append(" AND r.RecipeCategory = ?");
+            countParams.add(category);
+        }
+        if (minRating != null) {
+            countSql.append(" AND r.AggregatedRating >= ?");
+            countParams.add(minRating);
+        }
+
+        int total = jdbcTemplate.queryForObject(countSql.toString(), Integer.class, countParams.toArray());
+        recipeRecords.setTotal(total);
+        return recipeRecords;
     }
 
     @Override
     public long createRecipe(RecipeRecord dto, AuthInfo auth) {
+        String sql1 = "select max(RecipeId) from recipes";
+        Long max_id = jdbcTemplate.queryForObject(sql1, Long.class);
+        if (max_id == null) {
+            max_id = 1L;
+        }
+        max_id++;
+
+        String password = null;
+        String sql2 = "SELECT password FROM users WHERE AuthorId = ?";
+        try {
+            String dbPassword = jdbcTemplate.queryForObject(sql2, String.class, auth.getAuthorId());
+
+            if (!auth.getPassword().equals(dbPassword)) {
+                throw new SecurityException("user doesn't exist");
+            }
+        } catch (EmptyResultDataAccessException e) {
+            throw new SecurityException("user doesn't exist");
+        }
+
+        String sql3 = "insert into recipes ";
+
+
         return 0;
     }
 
