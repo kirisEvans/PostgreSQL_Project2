@@ -201,31 +201,157 @@ public class RecipeServiceImpl implements RecipeService {
         }
         max_id++;
 
-        String password = null;
         String sql2 = "SELECT password FROM users WHERE AuthorId = ?";
         try {
             String dbPassword = jdbcTemplate.queryForObject(sql2, String.class, auth.getAuthorId());
 
             if (!auth.getPassword().equals(dbPassword)) {
-                throw new SecurityException("user doesn't exist");
+                return -1;
             }
         } catch (EmptyResultDataAccessException e) {
-            throw new SecurityException("user doesn't exist");
+            return -1;
         }
 
-        String sql3 = "insert into recipes ";
+        String sql3 = """
+        INSERT INTO recipes
+        (RecipeId, Name, AuthorId, CookTime, PrepTime, TotalTime,
+         DatePublished, Description, RecipeCategory,
+         AggregatedRating, ReviewCount,
+         Calories, FatContent, SaturatedFatContent,
+         CholesterolContent, SodiumContent,
+         CarbohydrateContent, FiberContent, SugarContent,
+         ProteinContent, RecipeServings, RecipeYield)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (RecipeId) DO NOTHING
+        """;
 
+        if (dto.getRecipeId() != max_id) {
+            return -1;
+        }
+        jdbcTemplate.update(sql3,
+                dto.getRecipeId(),
+                dto.getName(),
+                dto.getAuthorId(),
+                dto.getCookTime(),
+                dto.getPrepTime(),
+                dto.getTotalTime(),
+                dto.getDatePublished(),
+                dto.getDescription(),
+                dto.getRecipeCategory(),
+                dto.getAggregatedRating(),
+                dto.getReviewCount(),
+                dto.getCalories(),
+                dto.getFatContent(),
+                dto.getSaturatedFatContent(),
+                dto.getCholesterolContent(),
+                dto.getSodiumContent(),
+                dto.getCarbohydrateContent(),
+                dto.getFiberContent(),
+                dto.getSugarContent(),
+                dto.getProteinContent(),
+                dto.getRecipeServings(),
+                dto.getRecipeYield()
+        );
 
-        return 0;
+        return max_id;
     }
 
     @Override
     public void deleteRecipe(long recipeId, AuthInfo auth) {
+        String sql1 = "SELECT AuthorId FROM recipes WHERE RecipeId = ?";
+        Long authorId;
+        try {
+            authorId = jdbcTemplate.queryForObject(sql1, Long.class, recipeId);
+        } catch (EmptyResultDataAccessException e) {
+            throw new IllegalArgumentException("recipe does not exist");
+        }
 
+        if (!authorId.equals(auth.getAuthorId())) {
+            throw new SecurityException("not recipe author");
+        }
+
+        jdbcTemplate.update(
+                "delete from review_likes where ReviewId in (select ReviewId FROM reviews WHERE RecipeId = ?)",
+                recipeId
+        );
+
+        jdbcTemplate.update(
+                "DELETE FROM reviews WHERE RecipeId = ?",
+                recipeId
+        );
+
+        jdbcTemplate.update(
+                "DELETE FROM recipe_ingredients WHERE RecipeId = ?",
+                recipeId
+        );
+
+        int rows = jdbcTemplate.update(
+                "DELETE FROM recipes WHERE RecipeId = ?",
+                recipeId
+        );
+
+        if (rows == 0) {
+            throw new IllegalArgumentException("recipe does not exist");
+        }
     }
 
     @Override
     public void updateTimes(AuthInfo auth, long recipeId, String cookTimeIso, String prepTimeIso) {
+        String sql1 = "SELECT AuthorId, CookTime, PrepTime FROM recipes WHERE RecipeId = ?";
+        RecipeRecord r;
+        try {
+            r = jdbcTemplate.queryForObject(sql1, new BeanPropertyRowMapper<>(RecipeRecord.class), recipeId);
+        } catch (EmptyResultDataAccessException e) {
+            throw new SecurityException("recipe does not exist");
+        }
+
+        if (r != null && r.getAuthorId() != auth.getAuthorId()) {
+            throw new SecurityException("not recipe author");
+        }
+
+        if (!(isValidDuration(cookTimeIso) && isValidDuration(prepTimeIso))) {
+            throw new IllegalArgumentException("text wrong");
+        }
+
+        String sql2 = "update recipes set CookTime = ?, PrepTime = ?, totalTime = ? where RecipeId = ?";
+        String cookTimeFinal = null;
+        String prepTimeFinal = null;
+
+        if (r != null) {
+            cookTimeFinal = (cookTimeIso != null && !cookTimeIso.isEmpty()) ? cookTimeIso : (r.getCookTime() != null &&
+                    !r.getCookTime().isEmpty() ? r.getCookTime() : "PT0S");
+        }
+        if (r != null) {
+            prepTimeFinal = (prepTimeIso != null && !prepTimeIso.isEmpty()) ? prepTimeIso : (r.getPrepTime() != null &&
+                    !r.getPrepTime().isEmpty() ? r.getPrepTime() : "PT0S");
+        }
+
+        if (cookTimeFinal != null && (Duration.parse(cookTimeFinal).isNegative() || Duration.parse(prepTimeFinal).isNegative())) {
+            throw new IllegalArgumentException("text wrong");
+        }
+
+        try {
+            if (cookTimeFinal != null) {
+                jdbcTemplate.update(sql2,
+                        cookTimeFinal,
+                        prepTimeFinal,
+                        Duration.parse(cookTimeFinal).plus(Duration.parse(prepTimeFinal)).toString(),
+                        recipeId
+                );
+            }
+        } catch (Exception e) {
+            throw new NullPointerException();
+        }
+    }
+
+    private boolean isValidDuration(String text) {
+        if (text == null) return true;
+        try {
+            Duration.parse(text);
+            return true;
+        } catch (DateTimeParseException e) {
+            return false;
+        }
     }
 
     @Override
