@@ -356,13 +356,60 @@ public class RecipeServiceImpl implements RecipeService {
 
     @Override
     public Map<String, Object> getClosestCaloriePair() {
-        return null;
+        String sql = """
+            select r1.recipeId as RecipeA,
+                            r2.recipeId as RecipeB,
+                            r1.calories as CaloriesA,
+                            r2.calories as CaloriesB,
+                            abs(r1.calories - r2.calories) as diff
+                    from recipes r1 inner join recipes r2
+                        on r1.calories = r2.calories + (select min(Difference) from
+                    (select abs(calories - lag(calories) over (order by calories)) as Difference from recipes) as rD)
+                        and r1.recipeId != r2.recipeId
+                    order by r1.recipeId, r2.recipeId desc
+                        limit 1;
+        """;
+
+        Map<String, Object> map = new HashMap<>();
+
+        try {
+            jdbcTemplate.query(sql, rs -> {
+                if (rs.next()) {
+                    map.put("RecipeA", rs.getLong("RecipeA"));
+                    map.put("RecipeB", rs.getLong("RecipeB"));
+                    map.put("CaloriesA", rs.getDouble("CaloriesA"));
+                    map.put("CaloriesB", rs.getDouble("CaloriesB"));
+                    map.put("Difference", rs.getDouble("diff"));
+                }
+                return map;
+            });
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
+
+        return map;
     }
 
     @Override
     public List<Map<String, Object>> getTop3MostComplexRecipesByIngredients() {
-        return null;
+        String sql = """
+            select c.recipeId as RecipeId, r.name as Name, cnt as IngredientCount from recipes r inner join
+                (select RecipeId, count(*) as cnt from recipe_ingredients
+                group by RecipeId order by cnt desc, recipeId limit 3) as c
+                on r.recipeId = c.recipeId;
+        """;
+        List<Map<String, Object>> map;
+        try {
+            map = jdbcTemplate.query(sql, (rs, rowNum) -> {
+                Map<String, Object> m = new HashMap<>();
+                m.put("RecipeId", rs.getLong("RecipeId"));
+                m.put("Name", rs.getString("Name"));
+                m.put("IngredientCount", rs.getInt("IngredientCount"));
+                return m;
+            });
+        } catch (EmptyResultDataAccessException e) {
+            return Collections.emptyList();
+        }
+        return map;
     }
-
-
 }
