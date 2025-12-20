@@ -99,7 +99,7 @@ public class RecipeServiceImpl implements RecipeService {
 
         String keywordPattern = "%" + keyword + "%";
         String orderBy = switch (sort) {
-            case "date_desc" -> "r.DatePublished DESC";
+            case "date_desc" -> "r.DatePublished DESC, r.RecipeId desc";
             case "rating_desc" -> "r.AggregatedRating DESC, r.RecipeId desc";
             case "calories_asc" -> "r.Calories ASC, r.RecipeId desc";
             default -> throw new IllegalArgumentException("Unknown sort: " + sort);
