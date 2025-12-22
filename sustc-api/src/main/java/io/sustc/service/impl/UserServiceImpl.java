@@ -231,12 +231,152 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public PageResult<FeedItem> feed(AuthInfo auth, int page, int size, String category) {
-        return null;
+        String sql1 = "select IsDeleted from users where authorId = ?";
+        try {
+            boolean isDeleted = jdbcTemplate.queryForObject(sql1, Boolean.class, auth.getAuthorId());
+            if (isDeleted) {
+                throw new SecurityException("user doesn't exist");
+            }
+        } catch (Exception e) {
+            throw new SecurityException("error");
+        }
+
+        int offset = (page - 1) * size;
+        String sql2 = """
+                select r.RecipeId, r.Name,
+                r.AuthorId, u.AuthorName,
+                r.DatePublished,
+                coalesce(avg(rv.Rating), 0.0) as AggregatedRating,
+                count(rv.reviewId) as ReviewCount
+                from recipes r left join users u
+                on r.AuthorId = u.AuthorId
+                left join reviews rv
+                on rv.RecipeId = r.RecipeId
+                where r.AuthorId in
+                (select followingId from user_follows
+                where followerId = ?)
+                and u.isDeleted = false
+                """;
+
+        if (category != null) {
+            sql2 = sql2 + " and r.RecipeCategory  = ? ";
+        }
+
+        sql2 = sql2 + """
+                group by r.RecipeId, r.Name, r.AuthorId,
+                u.AuthorName, r.DatePublished
+                order by r.DatePublished desc, r.RecipeId desc
+                limit ? offset ?
+                """;
+        PageResult<FeedItem> feedItemPageResult = new PageResult<>();
+
+        List<FeedItem> feedItems;
+        if (category != null) {
+            feedItems = jdbcTemplate.query(
+                    sql2,
+                    (rs, rowNum) -> {
+                        FeedItem item = new FeedItem();
+                        item.setRecipeId(rs.getLong("RecipeId"));
+                        item.setName(rs.getString("Name"));
+                        item.setAuthorId(rs.getLong("AuthorId"));
+                        item.setAuthorName(rs.getString("AuthorName"));
+
+                        Timestamp ts = rs.getTimestamp("DatePublished");
+                        item.setDatePublished(
+                                ts.toLocalDateTime()
+                                        .atZone(ZoneOffset.UTC)
+                                        .toInstant()
+                        );
+
+                        item.setAggregatedRating(rs.getDouble("AggregatedRating"));
+                        item.setReviewCount(rs.getInt("ReviewCount"));
+                        return item;
+                    },
+                    auth.getAuthorId(),
+                    category,
+                    size,
+                    offset
+            );
+        } else {
+            feedItems = jdbcTemplate.query(
+                    sql2,
+                    (rs, rowNum) -> {
+                        FeedItem item = new FeedItem();
+                        item.setRecipeId(rs.getLong("RecipeId"));
+                        item.setName(rs.getString("Name"));
+                        item.setAuthorId(rs.getLong("AuthorId"));
+                        item.setAuthorName(rs.getString("AuthorName"));
+
+                        Timestamp ts = rs.getTimestamp("DatePublished");
+                        item.setDatePublished(
+                                ts.toLocalDateTime()
+                                        .atZone(ZoneOffset.UTC)
+                                        .toInstant()
+                        );
+
+                        item.setAggregatedRating(rs.getDouble("AggregatedRating"));
+                        item.setReviewCount(rs.getInt("ReviewCount"));
+                        return item;
+                    },
+                    auth.getAuthorId(),
+                    size,
+                    offset
+            );
+        }
+
+        feedItemPageResult.setItems(feedItems);
+        feedItemPageResult.setSize(size);
+        feedItemPageResult.setPage(page);
+
+        String sql3 = "select count(*) from recipes where AuthorId in " +
+                "(select followingId from user_follows where followerId = ?)";
+
+        long total;
+        if (category != null) {
+            sql3 = sql3 + " and RecipeCategory = ?;";
+            total = jdbcTemplate.queryForObject(sql3, Long.class, auth.getAuthorId(), category);
+        } else {
+            total = jdbcTemplate.queryForObject(sql3, Long.class, auth.getAuthorId());
+        }
+
+        feedItemPageResult.setTotal(total);
+
+        return feedItemPageResult;
     }
 
     @Override
     public Map<String, Object> getUserWithHighestFollowRatio() {
-        return null;
-    }
+        String sql1 = """
+                select u.AuthorId,
+                       u.AuthorName,
+                       fc.followerCount * 1.0 / fg.followingCount as Ratio
+                from users u
+                join (
+                    select FollowingId as AuthorId, count(*) as followerCount
+                    from user_follows
+                    group by FollowingId
+                ) fc on fc.AuthorId = u.AuthorId
+                join (
+                    select FollowerId as AuthorId, count(*) as followingCount
+                    from user_follows
+                    group by FollowerId
+                ) fg on fg.AuthorId = u.AuthorId
+                where u.IsDeleted = false
+                  and fg.followingCount > 0
+                order by Ratio desc, u.AuthorId asc
+                limit 1
+                """;
 
+        try {
+            return jdbcTemplate.queryForObject(sql1, (rs, rowNum) -> {
+                Map<String, Object> map = new HashMap<>();
+                map.put("AuthorId", rs.getLong("AuthorId"));
+                map.put("AuthorName", rs.getString("AuthorName"));
+                map.put("Ratio", rs.getDouble("Ratio"));
+                return map;
+            });
+        } catch (Exception e) {
+            return null;
+        }
+    }
 }

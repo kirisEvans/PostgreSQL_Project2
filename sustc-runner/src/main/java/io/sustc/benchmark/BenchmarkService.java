@@ -454,7 +454,7 @@ public class BenchmarkService {
                 if (Objects.equals(it.getValue(), res)) {
                     pass.incrementAndGet();
                 } else {
-                    log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), false);
+                    log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
                 }
             } catch (IllegalArgumentException illegalArgumentException) {
                 if (Objects.equals(it.getValue(), -1L)) {
@@ -488,7 +488,7 @@ public class BenchmarkService {
                 if (Objects.equals(it.getValue(), res)) {
                     pass.incrementAndGet();
                 } else {
-                    log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), false);
+                    log.debug("Wrong answer for {}: expected {}, got {}", it.getKey(), it.getValue(), res);
                 }
             } catch (IllegalArgumentException illegalArgumentException) {
                 if (Objects.equals(it.getValue(), -1L)) {
@@ -580,7 +580,7 @@ public class BenchmarkService {
                 if (Boolean.TRUE.equals(it.getValue())) {
                     pass.incrementAndGet();
                 } else {
-                    log.debug("Wrong result for {}: expected {}, got {}", args, "true", res);
+                    log.debug("Wrong result for {}: expected {}, got {}", args, "true or SecurityException", res);
                 }
             } catch (SecurityException e) {
                 if (Boolean.FALSE.equals(it.getValue())) {
@@ -608,7 +608,7 @@ public class BenchmarkService {
                  if (Boolean.TRUE.equals(it.getValue())) {
                      pass.incrementAndGet();
                  } else {
-                     log.debug("Wrong result for {}: expected {}, got {}", args, "true", res);
+                     log.debug("Wrong result for {}: expected {}, got {}", args, "true or exception", res);
                  }
              } catch (IllegalArgumentException | SecurityException illegalArgumentException) {
                  if (Boolean.FALSE.equals(it.getValue())) {
