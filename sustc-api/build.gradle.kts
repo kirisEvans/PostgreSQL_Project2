@@ -13,7 +13,6 @@ plugins {
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
 
-    implementation("org.springframework.boot:spring-boot-starter-web")
     // 添加OpenCSV依赖
     implementation("com.opencsv:opencsv:5.7.1")
 
