@@ -25,6 +25,10 @@ dependencies {
 
     // 添加OpenCSV依赖
     implementation("com.opencsv:opencsv:5.7.1")
+
+    implementation(project(":sustc-api"))
+    implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springdoc:springdoc-openapi-ui:1.7.0")
 }
 
 tasks.withType<JavaExec> {

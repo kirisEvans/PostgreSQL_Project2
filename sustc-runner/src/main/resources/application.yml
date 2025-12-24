@@ -5,8 +5,12 @@ spring:
     password: haha  # change this to your own password
 
     hikari:
-      connection-timeout: 180000
-      leak-detection-threshold: 120000
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      leak-detection-threshold: 0
 
 logging:
   level:
