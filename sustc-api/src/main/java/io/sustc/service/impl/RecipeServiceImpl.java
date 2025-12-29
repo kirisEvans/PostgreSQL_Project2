@@ -297,61 +297,94 @@ public class RecipeServiceImpl implements RecipeService {
 
     @Override
     public void updateTimes(AuthInfo auth, long recipeId, String cookTimeIso, String prepTimeIso) {
-        String sql1 = "SELECT AuthorId, CookTime, PrepTime FROM recipes WHERE RecipeId = ?";
         RecipeRecord r;
         try {
-            r = jdbcTemplate.queryForObject(sql1, new BeanPropertyRowMapper<>(RecipeRecord.class), recipeId);
+            r = jdbcTemplate.queryForObject(
+                    "SELECT AuthorId, CookTime, PrepTime FROM recipes WHERE RecipeId = ?",
+                    new BeanPropertyRowMapper<>(RecipeRecord.class),
+                    recipeId
+            );
         } catch (EmptyResultDataAccessException e) {
             throw new SecurityException("recipe does not exist");
         }
 
-        if (r != null && r.getAuthorId() != auth.getAuthorId()) {
+        if (r.getAuthorId() != auth.getAuthorId()) {
             throw new SecurityException("not recipe author");
         }
 
-        if (!(isValidDuration(cookTimeIso) && isValidDuration(prepTimeIso))) {
-            throw new IllegalArgumentException("text wrong");
+        Map<String, Object> user = jdbcTemplate.queryForMap(
+                "SELECT password, IsDeleted FROM users WHERE AuthorId = ?",
+                r.getAuthorId()
+        );
+        boolean isDeleted = (boolean) user.get("IsDeleted");
+
+        if (isDeleted || !user.get("password").equals(auth.getPassword())) {
+            throw new SecurityException("no author");
         }
 
-        String sql2 = "update recipes set CookTime = ?, PrepTime = ?, totalTime = ? where RecipeId = ?";
-        String cookTimeFinal = null;
-        String prepTimeFinal = null;
+        if (cookTimeIso != null && cookTimeIso.isBlank()) cookTimeIso = null;
+        if (prepTimeIso != null && prepTimeIso.isBlank()) prepTimeIso = null;
 
-        if (r != null) {
-            cookTimeFinal = (cookTimeIso != null && !cookTimeIso.isEmpty()) ? cookTimeIso : (r.getCookTime() != null &&
-                    !r.getCookTime().isEmpty() ? r.getCookTime() : "PT0S");
-        }
-        if (r != null) {
-            prepTimeFinal = (prepTimeIso != null && !prepTimeIso.isEmpty()) ? prepTimeIso : (r.getPrepTime() != null &&
-                    !r.getPrepTime().isEmpty() ? r.getPrepTime() : "PT0S");
+        if (!isValidDuration(cookTimeIso) || !isValidDuration(prepTimeIso)) {
+            throw new IllegalArgumentException("Invalid duration format");
         }
 
-        if (cookTimeFinal != null && (Duration.parse(cookTimeFinal).isNegative() || Duration.parse(prepTimeFinal).isNegative())) {
-            throw new IllegalArgumentException("text wrong");
+        String cookTimeFinal =
+                (cookTimeIso != null)
+                        ? cookTimeIso
+                        : normalizeDuration(r.getCookTime());
+
+        String prepTimeFinal =
+                (prepTimeIso != null)
+                        ? prepTimeIso
+                        : normalizeDuration(r.getPrepTime());
+
+        if (!isValidDuration(cookTimeFinal) || !isValidDuration(prepTimeFinal)) {
+            throw new IllegalArgumentException("Invalid duration format");
+        }
+
+        Duration cookDuration = Duration.parse(cookTimeFinal);
+        Duration prepDuration = Duration.parse(prepTimeFinal);
+        if (cookDuration.isNegative() || prepDuration.isNegative()) {
+            throw new IllegalArgumentException("Duration cannot be negative");
+        }
+
+        Duration totalDuration;
+        try {
+            totalDuration = cookDuration.plus(prepDuration);
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException("Total duration overflow", e);
         }
 
         try {
-            if (cookTimeFinal != null) {
-                jdbcTemplate.update(sql2,
-                        cookTimeFinal,
-                        prepTimeFinal,
-                        Duration.parse(cookTimeFinal).plus(Duration.parse(prepTimeFinal)).toString(),
-                        recipeId
-                );
-            }
+            jdbcTemplate.update(
+                    "UPDATE recipes SET CookTime = ?, PrepTime = ?, totalTime = ? WHERE RecipeId = ?",
+                    cookTimeFinal,
+                    prepTimeFinal,
+                    totalDuration.toString(),
+                    recipeId
+            );
         } catch (Exception e) {
-            throw new NullPointerException();
+            throw new RuntimeException("Failed to update recipe times", e);
         }
     }
 
     private boolean isValidDuration(String text) {
         if (text == null) return true;
+        if (text.isBlank()) return false;
         try {
             Duration.parse(text);
             return true;
         } catch (DateTimeParseException e) {
             return false;
         }
+    }
+
+    private String normalizeDuration(String text) {
+        if (text == null || text.isBlank()) {
+            return "PT0S";
+        }
+        return text;
     }
 
     @Override

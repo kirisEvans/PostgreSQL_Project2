@@ -226,7 +226,6 @@ public class UserServiceImpl implements UserService {
         } catch (Exception e) {
             throw new SecurityException("not find authorId");
         }
-
     }
 
     @Override
