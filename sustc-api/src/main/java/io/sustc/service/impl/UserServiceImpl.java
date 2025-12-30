@@ -245,12 +245,33 @@ public class UserServiceImpl implements UserService {
                 select r.RecipeId, r.Name,
                 r.AuthorId, u.AuthorName,
                 r.DatePublished,
-                coalesce(avg(rv.Rating), 0.0) as AggregatedRating,
-                count(rv.reviewId) as ReviewCount
+                coalesce(rv.aggregatedrating, 0.0) as AggregatedRating,
+                coalesce(rv.reviewcount, 0) as ReviewCount
                 from recipes r left join users u
                 on r.AuthorId = u.AuthorId
-                left join reviews rv
-                on rv.RecipeId = r.RecipeId
+                left join (
+                    select x.recipeid,
+                           x.aggregatedrating,
+                           y.reviewcount
+                    from (
+                        select recipeid,
+                               avg(rating)::float as aggregatedrating
+                        from (
+                            select recipeid, rating, count(*) as cnt,
+                                   max(count(*)) over (partition by recipeid) as maxcnt
+                            from reviews
+                            where rating between 1 and 5
+                            group by recipeid, rating
+                        ) t
+                        where cnt = maxcnt
+                        group by recipeid
+                    ) x
+                    join (
+                        select recipeid, count(*) as reviewcount
+                        from reviews
+                        group by recipeid
+                    ) y on y.recipeid = x.recipeid
+                ) rv on rv.recipeid = r.recipeid
                 where r.AuthorId in
                 (select followingId from user_follows
                 where followerId = ?)
@@ -262,8 +283,6 @@ public class UserServiceImpl implements UserService {
         }
 
         sql2 = sql2 + """
-                group by r.RecipeId, r.Name, r.AuthorId,
-                u.AuthorName, r.DatePublished
                 order by r.DatePublished desc, r.RecipeId desc
                 limit ? offset ?
                 """;
