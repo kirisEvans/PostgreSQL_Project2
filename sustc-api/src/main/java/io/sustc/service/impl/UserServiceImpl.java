@@ -242,50 +242,57 @@ public class UserServiceImpl implements UserService {
 
         int offset = (page - 1) * size;
         String sql2 = """
-                select r.RecipeId, r.Name,
-                r.AuthorId, u.AuthorName,
-                r.DatePublished,
-                coalesce(rv.aggregatedrating, 0.0) as AggregatedRating,
-                coalesce(rv.reviewcount, 0) as ReviewCount
-                from recipes r left join users u
-                on r.AuthorId = u.AuthorId
-                left join (
-                    select x.recipeid,
-                           x.aggregatedrating,
-                           y.reviewcount
-                    from (
-                        select recipeid,
-                               avg(rating)::float as aggregatedrating
-                        from (
-                            select recipeid, rating, count(*) as cnt,
-                                   max(count(*)) over (partition by recipeid) as maxcnt
-                            from reviews
-                            where rating between 1 and 5
-                            group by recipeid, rating
-                        ) t
-                        where cnt = maxcnt
-                        group by recipeid
-                    ) x
-                    join (
-                        select recipeid, count(*) as reviewcount
-                        from reviews
-                        group by recipeid
-                    ) y on y.recipeid = x.recipeid
-                ) rv on rv.recipeid = r.recipeid
-                where r.AuthorId in
-                (select followingId from user_follows
-                where followerId = ?)
-                and u.isDeleted = false
-                """;
+with feed_recipes as (
+    select
+        r.recipeid as "RecipeId",
+        r.name as "Name",
+        r.authorid as "AuthorId",
+        u.authorname as "AuthorName",
+        r.datepublished as "DatePublished"
+    from recipes r
+    join users u on u.authorid = r.authorid
+    where r.authorid in (
+        select followingid from user_follows where followerid = ?
+    )
+      and u.isdeleted = false
+      %s
+    order by r.datepublished desc, r.recipeid desc
+    limit ? offset ?
+),
+mode_rating as (
+    select recipeid,
+           avg(rating)::float as aggregatedrating
+    from (
+        select recipeid, rating, count(*) as cnt,
+               max(count(*)) over (partition by recipeid) as maxcnt
+        from reviews
+        where recipeid in (select "RecipeId" from feed_recipes)
+          and rating between 1 and 5
+        group by recipeid, rating
+    ) t
+    where cnt = maxcnt
+    group by recipeid
+),
+review_cnt as (
+    select recipeid, count(*) as reviewcount
+    from reviews
+    where recipeid in (select "RecipeId" from feed_recipes)
+    group by recipeid
+)
+select
+    f."RecipeId",
+    f."Name",
+    f."AuthorId",
+    f."AuthorName",
+    f."DatePublished",
+    coalesce(m.aggregatedrating, 0.0) as "AggregatedRating",
+    coalesce(c.reviewcount, 0) as "ReviewCount"
+from feed_recipes f
+left join mode_rating m on m.recipeid = f."RecipeId"
+left join review_cnt c on c.recipeid = f."RecipeId"
+order by f."DatePublished" desc, f."RecipeId" desc
+""".formatted(category != null ? "and r.recipecategory = ?" : "");
 
-        if (category != null) {
-            sql2 = sql2 + " and r.RecipeCategory  = ? ";
-        }
-
-        sql2 = sql2 + """
-                order by r.DatePublished desc, r.RecipeId desc
-                limit ? offset ?
-                """;
         PageResult<FeedItem> feedItemPageResult = new PageResult<>();
 
         List<FeedItem> feedItems;

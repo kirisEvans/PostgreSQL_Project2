@@ -102,6 +102,11 @@ public class RecipeServiceImpl implements RecipeService {
         if (page < 1 || size <= 0) throw new IllegalArgumentException("page must be bigger than 1 or size must be positive");
 
         String keywordPattern = "%" + keyword + "%";
+
+        if (sort == null) {
+            sort = "date_desc";
+        }
+
         String orderBy = switch (sort) {
             case "date_desc" -> "r.DatePublished DESC, r.RecipeId desc";
             case "rating_desc" -> "r.AggregatedRating DESC, r.RecipeId desc";
