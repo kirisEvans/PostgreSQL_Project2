@@ -17,7 +17,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -284,23 +287,59 @@ public class ReviewServiceImpl implements ReviewService {
     @Override
     public PageResult<ReviewRecord> listByRecipe(long recipeId, int page, int size, String sort) {
         if (page < 1 || size <= 0) {
-            throw new IllegalArgumentException("page < 1 or size <= 0");
+            return null;
         }
-        String orderBy = switch (sort) {
-            case "date_desc" -> "r.DateModified DESC";
-            case "likes_desc" -> "r.reviewCount DESC";
-            default -> throw new IllegalArgumentException("Unknown sort: " + sort);
-        };
+
+        Integer cnt = jdbcTemplate.queryForObject(
+                "select count(*) from recipes where recipeId = ?",
+                Integer.class,
+                recipeId
+        );
+        if (cnt == null || cnt == 0) {
+            throw new IllegalArgumentException("Invalid recipeId");
+        }
+
+        String orderBy;
+        if (sort == null || sort.equals("date_desc")) {
+            orderBy = "r.DateModified DESC";
+        } else if (sort.equals("date_asc")) {
+            orderBy = "r.DateModified ASC";
+        } else if (sort.equals("likes_desc")) {
+            orderBy = "like_cnt DESC";
+        } else if (sort.equals("likes_asc")) {
+            orderBy = "like_cnt ASC";
+        } else {
+            orderBy = "r.DateModified DESC";
+        }
+
+        int offset = (page - 1) * size;
 
         PageResult<ReviewRecord> reviewRecords = new PageResult<>();
-        int offset = (page - 1) * size;
-        String sql = """
-                select r.ReviewId, r.RecipeId, r.AuthorId, u.authorName,
-                Rating, Review, DateSubmitted, DateModified from
-                reviews r left join users u on r.authorId = u.authorId where recipeId = ?
-                """;
+//        int offset = (page - 1) * size;
+        String baseSql = """
+            SELECT r.reviewId,
+                   r.recipeId,
+                   r.authorId,
+                   u.authorName,
+                   r.rating,
+                   r.review,
+                   r.dateSubmitted,
+                   r.dateModified,
+                   COALESCE(l.like_cnt, 0) AS like_cnt
+            FROM reviews r
+            LEFT JOIN users u ON r.authorId = u.authorId
+            LEFT JOIN (
+                SELECT reviewId, COUNT(*) AS like_cnt
+                FROM review_likes
+                GROUP BY reviewId
+            ) l ON r.reviewId = l.reviewId
+            WHERE r.recipeId = ?
+        """;
 
-        sql = sql + " order by " + orderBy + " limit ? offset ?;";
+        String sql = baseSql
+                + " ORDER BY " + orderBy + ", r.reviewId DESC"
+                + " LIMIT ? OFFSET ?";
+
 
 
         List<ReviewRecord> reviewRecordList = jdbcTemplate.query(
@@ -312,17 +351,34 @@ public class ReviewServiceImpl implements ReviewService {
         );
         reviewRecords.setItems(reviewRecordList);
 
-        String sql1 = "select authorId from review_likes where ReviewId = ?";
-        for (ReviewRecord reviewRecord : reviewRecords.getItems()) {
-            long reviewId = reviewRecord.getReviewId();
-            List<Long> likes = jdbcTemplate.query(
-                    sql1,
-                    (rs, rowNum) -> rs.getLong("authorId"),
-                    reviewId
-            );
-            reviewRecord.setLikes(
-                    likes.stream().mapToLong(Long::longValue).toArray()
-            );
+        List<Long> reviewIds = reviewRecords.getItems()
+                .stream()
+                .map(ReviewRecord::getReviewId)
+                .toList();
+
+        if (!reviewIds.isEmpty()) {
+            String inSql = reviewIds.stream()
+                    .map(id -> "?")
+                    .collect(Collectors.joining(","));
+
+            String sqlLikes =
+                    "SELECT reviewId, authorId " +
+                            "FROM review_likes " +
+                            "WHERE reviewId IN (" + inSql + ") " +
+                            "ORDER BY reviewId ASC, authorId ASC";
+
+            Map<Long, List<Long>> likeMap = new HashMap<>();
+
+            jdbcTemplate.query(sqlLikes, rs -> {
+                long reviewId = rs.getLong("reviewId");
+                long authorId = rs.getLong("authorId");
+                likeMap.computeIfAbsent(reviewId, k -> new ArrayList<>()).add(authorId);
+            }, reviewIds.toArray());
+
+            for (ReviewRecord r : reviewRecords.getItems()) {
+                List<Long> likes = likeMap.getOrDefault(r.getReviewId(), List.of());
+                r.setLikes(likes.stream().mapToLong(Long::longValue).toArray());
+            }
         }
 
         String sql2 = "select count(*) from reviews where recipeId = ?";

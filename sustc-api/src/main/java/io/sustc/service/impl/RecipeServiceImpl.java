@@ -298,6 +298,11 @@ public class RecipeServiceImpl implements RecipeService {
     @Override
     public void updateTimes(AuthInfo auth, long recipeId, String cookTimeIso, String prepTimeIso) {
         RecipeRecord r;
+        if (auth == null)
+        {
+            throw new SecurityException("no auth");
+        }
+
         try {
             r = jdbcTemplate.queryForObject(
                     "SELECT AuthorId, CookTime, PrepTime FROM recipes WHERE RecipeId = ?",
