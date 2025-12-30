@@ -88,6 +88,10 @@ public class RecipeServiceImpl implements RecipeService {
 
         recipe.setRecipeIngredientParts(ingredientParts.toArray(new String[0]));
 
+        String sql3 = "select isDeleted from users where authorId = ?";
+        if (jdbcTemplate.queryForObject(sql3, boolean.class, recipe.getAuthorId())) {
+            return null;
+        }
         return recipe;
     }
 
