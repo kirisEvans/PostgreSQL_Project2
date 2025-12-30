@@ -315,7 +315,6 @@ public class ReviewServiceImpl implements ReviewService {
         int offset = (page - 1) * size;
 
         PageResult<ReviewRecord> reviewRecords = new PageResult<>();
-//        int offset = (page - 1) * size;
         String baseSql = """
             SELECT r.reviewId,
                    r.recipeId,
@@ -339,8 +338,6 @@ public class ReviewServiceImpl implements ReviewService {
         String sql = baseSql
                 + " ORDER BY " + orderBy + ", r.reviewId DESC"
                 + " LIMIT ? OFFSET ?";
-
-
 
         List<ReviewRecord> reviewRecordList = jdbcTemplate.query(
                 sql,

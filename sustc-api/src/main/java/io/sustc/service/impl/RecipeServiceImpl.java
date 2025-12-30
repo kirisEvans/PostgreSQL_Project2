@@ -102,7 +102,7 @@ public class RecipeServiceImpl implements RecipeService {
             case "date_desc" -> "r.DatePublished DESC, r.RecipeId desc";
             case "rating_desc" -> "r.AggregatedRating DESC, r.RecipeId desc";
             case "calories_asc" -> "r.Calories ASC, r.RecipeId desc";
-            default -> throw new IllegalArgumentException("Unknown sort: " + sort);
+            default -> "r.RecipeId desc";
         };
         PageResult<RecipeRecord> recipeRecords = new PageResult<>();
         int offset = (page - 1) * size;
@@ -298,8 +298,7 @@ public class RecipeServiceImpl implements RecipeService {
     @Override
     public void updateTimes(AuthInfo auth, long recipeId, String cookTimeIso, String prepTimeIso) {
         RecipeRecord r;
-        if (auth == null)
-        {
+        if (auth == null) {
             throw new SecurityException("no auth");
         }
 
